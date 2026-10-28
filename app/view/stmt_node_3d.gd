@@ -175,15 +175,3 @@ func ix_click(_p: Pointer, hit: Dictionary) -> void:
 func ix_double_click(_p: Pointer, _hit: Dictionary) -> void:
 	board.workspace.edit_raw(board, stmt.key)
 
-
-func ix_grab(p: Pointer, hit: Dictionary) -> void:
-	_move = MoveDrag.begin(self, p, hit, true)
-
-
-func ix_grab_drag(p: Pointer) -> void:
-	ix_drag(p)
-
-
-func ix_ungrab(_p: Pointer) -> void:
-	board.node_moved(self)
-	_move = null

@@ -13,14 +13,13 @@ var transform := Transform3D.IDENTITY ## Camera / controller transform.
 var max_distance := 30.0
 
 var pressed := false ## Trigger or left mouse button.
-var gripping := false ## Grip button (VR), or Shift+drag on desktop.
+var gripping := false ## Grip button (VR): only ever moves / scales the world.
 var scroll := 0.0 ## Accumulated wheel / stick push-pull for this frame.
 
 # Managed by Interaction:
 var hover: Object
 var hit := {} ## {position, normal, collider, distance} of the current hover.
 var capture: Object ## Receives drag/release until the button goes up.
-var grab_capture: Object
 var was_pressed := false
 var was_gripping := false
 var press_time := 0

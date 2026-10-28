@@ -115,17 +115,3 @@ func ix_scroll(_p: Pointer, amount: float) -> void:
 func ix_click(_p: Pointer, _hit: Dictionary) -> void:
 	macro.workspace.toggle_class(class_id)
 
-
-func ix_grab(p: Pointer, hit: Dictionary) -> void:
-	_move = MoveDrag.begin(self, p, hit, false)
-	_move.rigid = false
-
-
-func ix_grab_drag(p: Pointer) -> void:
-	ix_drag(p)
-
-
-func ix_ungrab(_p: Pointer) -> void:
-	pinned = true
-	macro.node_moved(self)
-	_move = null

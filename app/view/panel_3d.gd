@@ -2,6 +2,7 @@ class_name Panel3D
 extends Node3D
 ## A regular Control tree rendered into a SubViewport on a quad. Pointer rays
 ## become mouse events in the viewport; keys are forwarded with send_key().
+## Trigger-drag the handle bar under it to move it.
 
 const PX_PER_M := 1100.0
 
@@ -38,6 +39,9 @@ func setup_panel(control: Control, p_size_m: Vector2) -> void:
 	_quad.material_override = mat
 	add_child(_quad)
 	add_child(Style.collider(self, Vector3(size_m.x, size_m.y, 0.01)))
+	var handle := Handle.new().setup(self)
+	handle.position = Vector3(0, -size_m.y * 0.5 - 0.025, 0)
+	add_child(handle)
 
 
 func send_key(ev: InputEvent) -> void:
@@ -92,28 +96,52 @@ func ix_release(p: Pointer, _hit: Dictionary) -> void:
 	_mouse_button(p, MOUSE_BUTTON_LEFT, false)
 
 
+## One wheel event whose factor is `amount` notches, so the small per-frame
+## amounts a thumbstick sends scroll smoothly.
 func ix_scroll(p: Pointer, amount: float) -> void:
 	var b := MOUSE_BUTTON_WHEEL_UP if amount > 0 else MOUSE_BUTTON_WHEEL_DOWN
-	for i in clampi(roundi(absf(amount)), 1, 5):
-		_mouse_button(p, b, true)
-		_mouse_button(p, b, false)
+	for down in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.position = _ray_px(p)
+		ev.global_position = ev.position
+		ev.button_index = b
+		ev.pressed = down
+		ev.factor = absf(amount)
+		viewport.push_input(ev)
 
 
-## Panels can be repositioned with the grip in VR.
-var _move: MoveDrag
+## The bar under a panel: trigger-drag it to move the panel.
+class Handle extends Node3D:
+	const SIZE := Vector2(0.16, 0.022)
+	const COLOR := Color(0.35, 0.45, 0.6, 0.9)
+	var panel: Node3D
+	var _bar: MeshInstance3D
+	var _move: MoveDrag
 
+	func setup(p_panel: Node3D) -> Handle:
+		panel = p_panel
+		_bar = Style.box(SIZE, COLOR, 0.008)
+		_bar.position += Vector3(-SIZE.x * 0.5, SIZE.y * 0.5, 0)
+		add_child(_bar)
+		add_child(Style.collider(self, Vector3(SIZE.x, SIZE.y * 1.6, 0.02)))
+		return self
 
-func ix_grab(p: Pointer, hit: Dictionary) -> void:
-	_move = MoveDrag.begin(self, p, hit, true)
+	func ix_hover(_p: Pointer, _hit: Dictionary, entered: bool) -> void:
+		_bar.material_override = Style.material(Style.SELECT_COLOR if entered else COLOR)
 
+	func ix_press(p: Pointer, hit: Dictionary) -> void:
+		_move = MoveDrag.begin(panel, p, hit)
 
-func ix_grab_drag(p: Pointer) -> void:
-	if _move:
-		_move.update(p)
+	func ix_drag(p: Pointer) -> void:
+		if _move:
+			_move.update(p)
 
+	func ix_release(_p: Pointer, _hit: Dictionary) -> void:
+		_move = null
 
-func ix_ungrab(_p: Pointer) -> void:
-	_move = null
+	func ix_scroll(_p: Pointer, amount: float) -> void:
+		if _move:
+			_move.push(amount)
 
 
 static func make_theme() -> Theme:

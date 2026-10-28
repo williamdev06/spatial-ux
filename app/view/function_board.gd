@@ -240,14 +240,3 @@ func ix_scroll(_p: Pointer, amount: float) -> void:
 	if _move:
 		_move.push(amount)
 
-
-func ix_grab(p: Pointer, hit: Dictionary) -> void:
-	_move = MoveDrag.begin(self, p, hit, true)
-
-
-func ix_grab_drag(p: Pointer) -> void:
-	ix_drag(p)
-
-
-func ix_ungrab(_p: Pointer) -> void:
-	_move = null

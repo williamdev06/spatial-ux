@@ -1,19 +1,22 @@
 class_name XRRig
 extends XROrigin3D
 ## OpenXR rig. Each hand is a Pointer (aim pose):
-##   trigger: click / drag pins, fields, nodes, panels
-##   grip on a node / board / panel: grab and move it (rotation follows)
-##   grip on empty space: grab the world and pull yourself around
-##   grip on empty space with both hands: pull apart / together to scale the world
+##   trigger: everything you touch: click / drag pins, fields, nodes, boards,
+##     orbs, panels (by their handle bar) and the keyboard (by its frame)
+##   grip, anywhere: grab the world and pull yourself around
+##   grip with both hands: pull apart / together to scale the world
 ##   poke a virtual key with the controller tip to type
 ##   left stick: move    right stick x: snap turn    right stick y: up/down,
 ##     or push/pull whatever is being dragged
+##   either stick up/down while that hand points at a panel: scroll it (the
+##     stick does nothing else meanwhile)
 ##   B / Y: virtual keyboard    A: undo    X: redo    menu: HUD panel
 
 const MOVE_SPEED := 1.5
 const SNAP_TURN := deg_to_rad(30.0)
 const RAY_COLOR := Color(0.6, 0.8, 1.0, 0.6)
 const POKE_TIP := 0.03 ## Poke point, this far along the aim ray from the controller.
+const PANEL_SCROLL_SPEED := 12.0 ## Wheel notches per second at full stick.
 
 var workspace: Workspace
 var camera: XRCamera3D
@@ -104,7 +107,7 @@ func _process(dt: float) -> void:
 	var left: XRController3D = hands.left.ctrl
 	var right: XRController3D = hands.right.ctrl
 	var move := left.get_vector2("primary")
-	if move.length() > 0.15:
+	if not _stick_scrolls_panel(hands.left, move, dt) and move.length() > 0.15:
 		var fwd := -camera.global_basis.z
 		fwd.y = 0
 		fwd = fwd.normalized()
@@ -113,6 +116,9 @@ func _process(dt: float) -> void:
 		side = side.normalized()
 		global_position += (fwd * move.y + side * move.x) * MOVE_SPEED * dt
 	var turn := right.get_vector2("primary")
+	if _stick_scrolls_panel(hands.right, turn, dt):
+		_snap_armed = false
+		return
 	if absf(turn.x) > 0.7 and _snap_armed:
 		_snap_armed = false
 		var pivot := camera.global_position
@@ -122,10 +128,21 @@ func _process(dt: float) -> void:
 		_snap_armed = true
 	if absf(turn.y) > 0.2:
 		var rp: Pointer = hands.right.pointer
-		if is_instance_valid(rp.capture) or is_instance_valid(rp.grab_capture):
+		if is_instance_valid(rp.capture):
 			rp.scroll += turn.y * dt * 6.0
 		else:
 			global_position.y += turn.y * MOVE_SPEED * 0.6 * dt
+
+
+## While a hand points at a panel its stick scrolls the panel and is consumed
+## (returns true), so lists can be scrolled without moving or turning.
+func _stick_scrolls_panel(h: Dictionary, stick: Vector2, dt: float) -> bool:
+	var p: Pointer = h.pointer
+	if not is_instance_valid(p.hover) or not p.hover is Panel3D or is_instance_valid(p.capture):
+		return false
+	if absf(stick.y) > 0.2:
+		p.scroll += stick.y * dt * PANEL_SCROLL_SPEED
+	return true
 
 
 func _on_button(button: String, side: String) -> void:

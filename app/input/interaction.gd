@@ -7,9 +7,10 @@ extends Node3D
 ##   ix_hover(pointer, hit, entered: bool)
 ##   ix_press(pointer, hit)       ix_drag(pointer)       ix_release(pointer, hit)
 ##   ix_click(pointer, hit)       ix_double_click(pointer, hit)
-##   ix_grab(pointer, hit)        ix_grab_drag(pointer)  ix_ungrab(pointer)
 ##   ix_scroll(pointer, amount)
-## Unhandled presses/grabs on empty space go to `empty_handler` (the rig).
+## Unhandled presses on empty space go to `empty_handler` (the rig). The grip
+## never reaches interactables: it always goes to the empty handler, which
+## moves / scales the world with it.
 
 signal pointer_released_on_empty(pointer: Pointer)
 
@@ -94,27 +95,18 @@ func _update(p: Pointer) -> void:
 			pointer_released_on_empty.emit(p)
 	p.was_pressed = p.pressed
 
-	# Grip.
+	# Grip: the world, wherever the pointer is.
 	if p.gripping and not p.was_gripping:
-		p.grab_capture = target if target and target.has_method("ix_grab") else null
-		if p.grab_capture:
-			p.grab_capture.ix_grab(p, hit)
-		elif empty_handler and empty_handler.has_method("ix_grab_empty"):
+		if empty_handler and empty_handler.has_method("ix_grab_empty"):
 			empty_handler.ix_grab_empty(p)
-	elif p.gripping and is_instance_valid(p.grab_capture):
-		if p.grab_capture.has_method("ix_grab_drag"):
-			p.grab_capture.ix_grab_drag(p)
 	elif not p.gripping and p.was_gripping:
-		if is_instance_valid(p.grab_capture) and p.grab_capture.has_method("ix_ungrab"):
-			p.grab_capture.ix_ungrab(p)
-		elif empty_handler and empty_handler.has_method("ix_ungrab_empty"):
+		if empty_handler and empty_handler.has_method("ix_ungrab_empty"):
 			empty_handler.ix_ungrab_empty(p)
-		p.grab_capture = null
 	p.was_gripping = p.gripping
 
 	# Scroll goes to what is being dragged, else to what is hovered.
 	if not is_zero_approx(p.scroll):
-		var st: Object = p.capture if is_instance_valid(p.capture) else (p.grab_capture if is_instance_valid(p.grab_capture) else target)
+		var st: Object = p.capture if is_instance_valid(p.capture) else target
 		if st and st.has_method("ix_scroll"):
 			st.ix_scroll(p, p.scroll)
 		elif empty_handler and empty_handler.has_method("ix_scroll_empty"):

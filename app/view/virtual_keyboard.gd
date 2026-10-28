@@ -3,8 +3,8 @@ extends Node3D
 ## A floating keyboard for VR, centred on its origin with the keys facing +Z.
 ##   trigger / mouse on a key: type (⌫, del and the arrows repeat while held)
 ##   poke a key with a controller tip: type (the rig calls poke() every frame)
-##   grip anywhere on it, or trigger-drag its border: move it
-##   grip it with both hands and pull apart / together: resize it
+##   trigger-drag its frame (the title strip or border): move it
+##   trigger on the frame with both hands, pull apart / together: resize it
 ## Emits key events that the Workspace forwards to whichever panel has focus.
 
 signal key_event(ev: InputEventKey)
@@ -63,8 +63,7 @@ var _ctrl := false
 var _last_shift_ms := -10000
 var _held := {} ## holder ("left", "poke:right", ...) -> {key: KeyCap, t: float}
 var _poke_armed := {} ## hand -> bool
-var _move: MoveDrag ## Trigger drag on the border.
-var _grabs := {} ## Pointer -> MoveDrag
+var _drags := {} ## Pointer -> MoveDrag, for triggers held on the frame
 var _pinch := {} ## Two-hand resize: distance, midpoint and transform at its start.
 
 
@@ -130,15 +129,6 @@ class KeyCap extends Node3D:
 	func ix_release(p: Pointer, _hit: Dictionary) -> void:
 		kb._key_up(p.id)
 
-	func ix_grab(p: Pointer, hit: Dictionary) -> void:
-		kb.ix_grab(p, hit)
-
-	func ix_grab_drag(p: Pointer) -> void:
-		kb.ix_grab_drag(p)
-
-	func ix_ungrab(p: Pointer) -> void:
-		kb.ix_ungrab(p)
-
 
 func _ready() -> void:
 	var keys_w := 15.0 * UNIT - GAP
@@ -149,7 +139,7 @@ func _ready() -> void:
 	frame.position += top_left + Vector3(0, 0, -CAP_DEPTH * 0.7)
 	add_child(frame)
 	add_child(Style.collider(self, Vector3(size.x, size.y, 0.01), Vector3(0, 0, -CAP_DEPTH * 0.7 - 0.005)))
-	var title := Style.label("grip: move  ·  grip with both hands: resize  ·  shift twice: caps lock", Style.FONT_SMALL, Style.TEXT_DIM)
+	var title := Style.label("drag this frame to move  ·  with both hands to resize  ·  shift twice: caps lock", Style.FONT_SMALL, Style.TEXT_DIM)
 	title.position = top_left + Vector3(PAD, -PAD * 0.5 - BAR * 0.5, 0.001)
 	add_child(title)
 	var y := top_left.y - PAD - BAR
@@ -290,60 +280,46 @@ func _refresh_keys() -> void:
 		k.refresh()
 
 
-# --- moving and resizing ---------------------------------------------------------
+# --- moving and resizing: trigger on the frame; two triggers resize ---------------
 
 func ix_press(p: Pointer, hit: Dictionary) -> void:
-	_move = MoveDrag.begin(self, p, hit)
+	_drags[p] = MoveDrag.begin(self, p, hit)
+	_begin_pinch()
 
 
 func ix_drag(p: Pointer) -> void:
-	if _move:
-		_move.update(p)
-
-
-func ix_release(_p: Pointer, _hit: Dictionary) -> void:
-	_move = null
-	user_placed = true
-
-
-func ix_scroll(_p: Pointer, amount: float) -> void:
-	if _move:
-		_move.push(amount)
-
-
-func ix_grab(p: Pointer, hit: Dictionary) -> void:
-	_grabs[p] = MoveDrag.begin(self, p, hit, true)
-	_begin_pinch()
-
-
-func ix_grab_drag(p: Pointer) -> void:
-	if _grabs.size() >= 2:
+	if _drags.size() >= 2:
 		_update_pinch()
-	elif _grabs.has(p):
-		_grabs[p].update(p)
+	elif _drags.has(p):
+		_drags[p].update(p)
 
 
-func ix_ungrab(p: Pointer) -> void:
-	_grabs.erase(p)
+func ix_release(p: Pointer, _hit: Dictionary) -> void:
+	_drags.erase(p)
 	user_placed = true
 	# The hand still holding on carries on from wherever the pinch left it.
-	for q in _grabs.keys():
-		_grabs[q] = MoveDrag.begin(self, q, {}, true)
+	for q in _drags.keys():
+		_drags[q] = MoveDrag.begin(self, q, { position = q.point_at(q.origin.distance_to(global_position)) })
 	_begin_pinch()
+
+
+func ix_scroll(p: Pointer, amount: float) -> void:
+	if _drags.size() == 1 and _drags.has(p):
+		_drags[p].push(amount)
 
 
 func _begin_pinch() -> void:
 	_pinch = {}
-	if _grabs.size() < 2:
+	if _drags.size() < 2:
 		return
-	var ps: Array = _grabs.keys()
+	var ps: Array = _drags.keys()
 	var a: Vector3 = ps[0].origin
 	var b: Vector3 = ps[1].origin
 	_pinch = { d = maxf(0.02, a.distance_to(b)), mid = (a + b) * 0.5, xf = global_transform }
 
 
 func _update_pinch() -> void:
-	var ps: Array = _grabs.keys()
+	var ps: Array = _drags.keys()
 	var a: Vector3 = ps[0].origin
 	var b: Vector3 = ps[1].origin
 	var xf: Transform3D = _pinch.xf

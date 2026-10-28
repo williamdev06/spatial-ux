@@ -10,8 +10,8 @@ Click a class sphere to show its functions as orbs; click an orb to open its boa
 Drag from a pin to empty space for the context search; drop on another pin to connect (exec: reorder, data: use the value).
 Del delete · Alt+↑/↓ reorder · Space add after selected · Enter edit selected · Ctrl+Z/Y undo/redo · R auto-layout · K keyboard · Ctrl+O open · F1 help
 Functions: "+ func" on a board or class sphere (N) · "+ input" on the func node (I) · click name / input / returns to edit, clear an input to remove it · double-click the func node to edit the whole signature · "delete" twice removes a function"""
-const HELP_XR := """Trigger: click/drag · Grip: grab node/board/panel/keyboard, or the world · both grips on empty space: pull apart / together to scale the world
-Left stick move · Right stick turn / up-down / push-pull · B/Y keyboard (poke or point at keys; grip with both hands to resize it) · A undo · X redo · Menu: this panel"""
+const HELP_XR := """Trigger: click / drag anything (panels by the bar under them, the keyboard by its frame) · Grip: grab the world · both grips: pull apart / together to scale the world
+Left stick move · Right stick turn / up-down / push-pull · point at a panel and push a stick up/down to scroll it · B/Y keyboard (poke or point at keys; trigger its frame with both hands to resize) · A undo · X redo · Menu: this panel"""
 
 var _path_label: Label
 var _status: Label

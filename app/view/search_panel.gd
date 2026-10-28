@@ -35,7 +35,8 @@ func open(title: String, candidates: Array, allow_custom := false) -> void:
 	_list = ItemList.new()
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list.item_activated.connect(func(i): _choose(i))
-	_list.item_clicked.connect(func(i, _pos, _btn): _choose(i))
+	# Wheel / stick scrolling also reports item_clicked: only a real click picks.
+	_list.item_clicked.connect(func(i, _pos, btn): if btn == MOUSE_BUTTON_LEFT: _choose(i))
 	vb.add_child(_list)
 	setup_panel(pc, Vector2(0.62, 0.72))
 	_refresh()
