@@ -10,6 +10,10 @@ signal project_opened(path: String)
 const POLL_SECONDS := 1.0
 const RESCAN_SECONDS := 4.0
 const SAVE_DELAY := 0.6
+const MIN_WORLD_SCALE := 0.05
+const MAX_WORLD_SCALE := 20.0
+const KEYBOARD_REACH := 1.2 ## A keyboard put further away than this is brought back.
+const KEYBOARD_TILT := deg_to_rad(35.0)
 
 const STATEMENT_TEMPLATES := [
 	["if", "if condition:\n\tpass"],
@@ -58,6 +62,7 @@ func _ready() -> void:
 	keyboard = VirtualKeyboard.new()
 	keyboard.name = "Keyboard"
 	keyboard.visible = false
+	keyboard.top_level = true # keeps its real-world size when the world is scaled
 	keyboard.key_event.connect(handle_key)
 	add_child(keyboard)
 	_set_keyboard_enabled(false)
@@ -69,6 +74,7 @@ func _ready() -> void:
 	wm.albedo_color = Style.SELECT_COLOR
 	wm.no_depth_test = true
 	wmi.material_override = wm
+	wmi.top_level = true # vertices are global positions
 	add_child(wmi)
 	_wire.mesh = wmi
 	_wire.imesh = im
@@ -265,7 +271,7 @@ func _arrange_boards(n: ClassNode3D, boards: Array[FunctionBoard]) -> void:
 			width = 0.0
 		rows[-1].append(b)
 		width += w + GAP
-	var bottom := FLOOR_CLEARANCE - n.global_position.y
+	var bottom := (FLOOR_CLEARANCE - n.global_position.y) / n.boards_root.global_basis.get_scale().y
 	for b in _boards.get(n.class_id, []):
 		if not boards.has(b):
 			bottom = maxf(bottom, b.position.y - b.bounds().position.y + GAP)
@@ -292,7 +298,7 @@ func _face_viewer(node: Node3D) -> void:
 	to.y = 0.0
 	if to.length() < 0.01:
 		return
-	node.global_basis = Basis.looking_at(-to.normalized(), Vector3.UP)
+	node.global_basis = Basis.looking_at(-to.normalized(), Vector3.UP).scaled(node.global_basis.get_scale())
 
 
 func close_board(b: FunctionBoard) -> void:
@@ -724,6 +730,7 @@ func _writable_type(t: String) -> String:
 func _show_panel(p: Panel3D, near: Node3D, at := Vector3.INF) -> void:
 	_close_panel()
 	_panel = p
+	p.top_level = true # real-world size whatever the world scale
 	add_child(p)
 	var pos := at if at != Vector3.INF else near.global_position
 	var head: Transform3D = head_provider.call() if head_provider.is_valid() else Transform3D(Basis(), pos + Vector3(0, 0, 1))
@@ -733,10 +740,7 @@ func _show_panel(p: Panel3D, near: Node3D, at := Vector3.INF) -> void:
 	var place := pos + to_head.normalized() * minf(0.35, dist * 0.4)
 	p.global_transform = Transform3D(Basis.looking_at(-to_head.normalized(), Vector3.UP), place)
 	if is_xr:
-		keyboard.visible = true
-		_set_keyboard_enabled(true)
-		keyboard.global_transform = Transform3D(p.global_basis, place - p.global_basis.y * 0.42 + to_head.normalized() * 0.05)
-		keyboard.global_position -= keyboard.global_basis.x * 0.35
+		_show_keyboard(p)
 
 
 func _close_panel() -> void:
@@ -755,15 +759,56 @@ func _set_keyboard_enabled(on: bool) -> void:
 
 
 func toggle_keyboard() -> void:
-	keyboard.visible = not keyboard.visible
-	_set_keyboard_enabled(keyboard.visible)
-	if keyboard.visible and head_provider.is_valid():
-		var head: Transform3D = head_provider.call()
-		var fwd := -head.basis.z
-		fwd.y = 0
-		fwd = fwd.normalized()
-		keyboard.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), head.origin + fwd * 0.55 + Vector3(0, -0.45, 0))
-		keyboard.global_position -= keyboard.global_basis.x * 0.35
+	if keyboard.visible:
+		keyboard.visible = false
+		_set_keyboard_enabled(false)
+	else:
+		_show_keyboard(null)
+
+
+## Shows the keyboard tilted like a desk keyboard at arm's length below the
+## viewer's eyes, turned towards `facing` (else the view direction). A keyboard
+## the user moved stays put while it is still within reach.
+func _show_keyboard(facing: Node3D) -> void:
+	keyboard.visible = true
+	_set_keyboard_enabled(true)
+	if not head_provider.is_valid():
+		return
+	var head: Transform3D = head_provider.call()
+	if keyboard.user_placed and keyboard.global_position.distance_to(head.origin) < KEYBOARD_REACH:
+		return
+	keyboard.user_placed = false
+	var fwd: Vector3 = facing.global_position - head.origin if facing else -head.basis.z
+	fwd.y = 0.0
+	if fwd.length() < 0.01:
+		fwd = Vector3(-head.basis.z.x, 0.0, -head.basis.z.z) if absf(head.basis.z.y) < 0.99 else Vector3.FORWARD
+	fwd = fwd.normalized()
+	var b := Basis.looking_at(fwd, Vector3.UP) * Basis(Vector3.RIGHT, -KEYBOARD_TILT)
+	keyboard.global_transform = Transform3D(b.scaled(keyboard.global_basis.get_scale()), head.origin + fwd * 0.45 + Vector3.DOWN * 0.42)
+
+
+# --- world scale -----------------------------------------------------------------------
+
+func world_scale() -> float:
+	return global_basis.get_scale().x
+
+
+## Scales everything in the project by `factor` about the global point `pivot`
+## (two-hand grip in VR, Ctrl+wheel on desktop). Layout positions are local, so
+## the sidecar is unaffected; panels and the keyboard are top_level and keep
+## their real-world size.
+func scale_world(factor: float, pivot: Vector3) -> void:
+	var s := world_scale()
+	factor = clampf(s * factor, MIN_WORLD_SCALE, MAX_WORLD_SCALE) / s
+	if is_equal_approx(factor, 1.0):
+		return
+	global_transform = Transform3D(global_basis.scaled(Vector3.ONE * factor), pivot + (global_position - pivot) * factor)
+
+
+func reset_world_scale() -> void:
+	var pivot: Vector3 = head_provider.call().origin if head_provider.is_valid() else Vector3.ZERO
+	scale_world(1.0 / world_scale(), pivot)
+	status("World scale 100%")
 
 
 func has_panel() -> bool:
@@ -1064,6 +1109,10 @@ func handle_key(ev: InputEventKey) -> bool:
 				relayout(selection.board)
 		KEY_K:
 			toggle_keyboard()
+		KEY_0:
+			if not ctrl:
+				return false
+			reset_world_scale()
 		KEY_N:
 			if is_instance_valid(selection.board):
 				prompt_new_function(selection.board.self_type, selection.board)

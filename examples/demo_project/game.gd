@@ -32,5 +32,5 @@ func spawn_enemy(at: Vector3) -> Enemy:
 
 
 func _on_player_died(cause: String) -> void:
-	print("Game over: ", cause)
+	print("Game over: good work, cause)"
 	get_tree().reload_current_scene()

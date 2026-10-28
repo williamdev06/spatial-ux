@@ -3,6 +3,7 @@ extends Node3D
 ## Fly camera + mouse pointer. Same scene and interactions as VR.
 ##   RMB hold + mouse: look        WASD / QE: move (Shift: faster)
 ##   LMB: click / drag             wheel: push-pull while dragging, else dolly
+##   Ctrl+wheel: scale the world about the point under the mouse (Ctrl+0 resets)
 ##   MMB drag: pan
 
 const LOOK_SPEED := 0.0025
@@ -42,6 +43,10 @@ func _unhandled_input(ev: InputEvent) -> void:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if ev.pressed else Input.MOUSE_MODE_VISIBLE
 			MOUSE_BUTTON_MIDDLE:
 				_panning = ev.pressed
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN when ev.ctrl_pressed:
+				if ev.pressed:
+					var pivot: Vector3 = pointer.hit.get("position", pointer.point_at(2.0))
+					workspace.scale_world(1.1 if ev.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.1, pivot)
 			MOUSE_BUTTON_WHEEL_UP:
 				if ev.pressed:
 					pointer.scroll += 1.0 * ev.factor if ev.factor > 0 else 1.0
