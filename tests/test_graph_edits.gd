@@ -74,6 +74,26 @@ func test_delete_statement_only_touches_its_line() -> void:
 	_valid(sf)
 
 
+func test_delete_before_blank_line_keeps_following_lines() -> void:
+	var src := "func f(n, p, first_point):\n\tfor i in n:\n\t\tpolygon.append(p)\n\tpolygon.append(first_point)\n\n\t# comment\n\tget_window().x = polygon\n"
+	var sf := temp_script(src)
+	check(run_op(sf, "f", func(g): return GraphEdits.delete_statement(sf.doc, g, g.get_stmt("1"))), "op")
+	check_eq(_src_of(sf), src.replace("\tpolygon.append(first_point)\n", ""))
+	_valid(sf)
+
+
+func test_delete_one_of_identical_neighbours() -> void:
+	# From sprite_polygon_passthrough.gd: deleting either copy leaves the other,
+	# and the blank line and comment around them, as they were.
+	var src := "func f():\n\tfor b in bs:\n\t\tfor p in b:\n\t\t\tpolygon.append(p)\n\n\t\tpolygon.append(first_point)\n\t\tpolygon.append(first_point)\n\n\t# comment\n\tget_window().x = polygon\n"
+	var want := "func f():\n\tfor b in bs:\n\t\tfor p in b:\n\t\t\tpolygon.append(p)\n\n\t\tpolygon.append(first_point)\n\n\t# comment\n\tget_window().x = polygon\n"
+	for key in ["0.body.1", "0.body.2"]:
+		var sf := temp_script(src)
+		check(run_op(sf, "f", func(g): return GraphEdits.delete_statement(sf.doc, g, g.get_stmt(key))), "op " + key)
+		check_eq(_src_of(sf), want)
+		_valid(sf)
+
+
 func test_delete_compound_keeps_following_comment() -> void:
 	var sf := temp_script(SRC)
 	run_op(sf, "run", func(g): return GraphEdits.delete_statement(sf.doc, g, g.get_stmt("2")))

@@ -83,6 +83,16 @@ func test_corpus_graph_ops() -> void:
 	print("    graph ops: %d clean files, %d functions, %d statements, %d ops" % [clean, _stats.functions, _stats.stmts, _stats.graph_ops])
 
 
+func test_changed_rows_with_identical_neighbours() -> void:
+	var before := "a\n\nx\nx\n\nb\n"
+	var after := "a\n\nx\n\nb\n"
+	# Deleting either `x` changes only that row.
+	check_eq(changed_rows(before, after, 2, 2), Vector2i(2, 2))
+	check_eq(changed_rows(before, after, 3, 3), Vector2i(3, 3))
+	# A real change outside the rows is still caught.
+	check_eq(changed_rows(before, "a\n\nx\n\nB\n", 2, 2), Vector2i(2, 5))
+
+
 func _token_edits(d: GDSyntaxDocument, p: String) -> void:
 	var original := d.get_source_bytes()
 	var sexp := d.get_sexp()
@@ -200,16 +210,9 @@ func _run(sf: ScriptFile, qualname: String, op: Callable) -> Dictionary:
 
 ## Lines outside the rows an operation is about must be untouched.
 func _check_diff_region(before: String, after: String, lo: int, hi: int, pure_insert: bool, where: String) -> void:
-	var a := before.split("\n")
-	var b := after.split("\n")
-	var pre := 0
-	while pre < a.size() and pre < b.size() and a[pre] == b[pre]:
-		pre += 1
-	var suf := 0
-	while suf < a.size() - pre and suf < b.size() - pre and a[a.size() - 1 - suf] == b[b.size() - 1 - suf]:
-		suf += 1
-	var changed_lo := pre
-	var changed_hi := a.size() - 1 - suf # inclusive, in `before`
+	var changed := changed_rows(before, after, lo, hi)
+	var changed_lo := changed.x
+	var changed_hi := changed.y
 	if changed_hi < changed_lo:
 		return # pure insertion or no change
 	if pure_insert:
@@ -218,6 +221,21 @@ func _check_diff_region(before: String, after: String, lo: int, hi: int, pure_in
 		check(changed_lo >= lo and changed_hi <= hi, "insert changed lines %d-%d outside %d-%d: %s\n%s" % [changed_lo, changed_hi, lo, hi, where, _diff(before, after)])
 		return
 	check(changed_lo >= lo and changed_hi <= hi, "changed lines %d-%d outside %d-%d: %s\n%s" % [changed_lo, changed_hi, lo, hi, where, _diff(before, after)])
+
+
+## First and last changed rows of `before` (inclusive). The common prefix and
+## suffix stop at rows `lo` and `hi`: a greedy match runs past them when the
+## edited line has an identical neighbour, and blames the neighbour instead.
+static func changed_rows(before: String, after: String, lo: int, hi: int) -> Vector2i:
+	var a := before.split("\n")
+	var b := after.split("\n")
+	var pre := 0
+	while pre < lo and pre < a.size() and pre < b.size() and a[pre] == b[pre]:
+		pre += 1
+	var suf := 0
+	while suf < a.size() - 1 - hi and suf < a.size() - pre and suf < b.size() - pre and a[a.size() - 1 - suf] == b[b.size() - 1 - suf]:
+		suf += 1
+	return Vector2i(pre, a.size() - 1 - suf)
 
 
 func _diff(a: String, b: String) -> String:
