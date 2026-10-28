@@ -14,3 +14,13 @@ export_credentials.cfg
 .mono/
 data_*/
 mono_crash.*.json
+
+# GDExtension build intermediates
+*.obj
+*.os
+*.o
+.sconsign*.dblite
+bin/*.exp
+bin/*.lib
+bin/*.pdb
+bin/*.ilk

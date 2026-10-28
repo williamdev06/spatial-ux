@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+# Builds the gdsyntax GDExtension: tree-sitter + tree-sitter-gdscript wrapped
+# for GDScript. Output goes to ../bin/ so the project can load it directly.
+#
+#   cd gdextension
+#   scons                      # template_debug (what the editor / headless tests load)
+#   scons target=template_release
+
+env = SConscript("thirdparty/godot-cpp/SConstruct")
+
+TS = "thirdparty/tree-sitter/lib"
+TS_GD = "thirdparty/tree-sitter-gdscript/src"
+
+env.Append(CPPPATH=["src/", TS + "/include", TS + "/src", TS_GD])
+
+# tree-sitter and the generated grammar are plain C; build them without the
+# C++ warnings godot-cpp turns on, and keep MSVC quiet about POSIX names.
+c_env = env.Clone()
+if env.get("is_msvc", False):
+    c_env.Append(CCFLAGS=["/W0"])
+    c_env.Append(CPPDEFINES=["_CRT_SECURE_NO_WARNINGS"])
+else:
+    c_env.Append(CFLAGS=["-std=c11", "-w"])
+    c_env.Append(CPPDEFINES=["_POSIX_C_SOURCE=200112L", "_DEFAULT_SOURCE"])
+
+c_objects = [
+    c_env.SharedObject(TS + "/src/lib.c"),
+    c_env.SharedObject(TS_GD + "/parser.c"),
+    c_env.SharedObject(TS_GD + "/scanner.c"),
+]
+
+sources = Glob("src/*.cpp") + c_objects
+
+if env["platform"] == "macos":
+    library = env.SharedLibrary(
+        "../bin/libgdsyntax.{}.{}.framework/libgdsyntax.{}.{}".format(
+            env["platform"], env["target"], env["platform"], env["target"]
+        ),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "../bin/libgdsyntax{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
+
+env.NoCache(library)
+Default(library)

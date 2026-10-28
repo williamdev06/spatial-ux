@@ -1,0 +1,11 @@
+; Demo project for spatial-ux. Open this folder from the tool.
+config_version=5
+
+[application]
+
+config/name="Spatial UX Demo"
+config/features=PackedStringArray("4.7")
+
+[autoload]
+
+Game="*res://game.gd"

@@ -1,0 +1,12 @@
+[submodule "gdextension/thirdparty/godot-cpp"]
+	path = gdextension/thirdparty/godot-cpp
+	url = https://github.com/godotengine/godot-cpp
+	ignore = dirty
+[submodule "gdextension/thirdparty/tree-sitter"]
+	path = gdextension/thirdparty/tree-sitter
+	url = https://github.com/tree-sitter/tree-sitter
+	ignore = dirty
+[submodule "gdextension/thirdparty/tree-sitter-gdscript"]
+	path = gdextension/thirdparty/tree-sitter-gdscript
+	url = https://github.com/PrestonKnopp/tree-sitter-gdscript
+	ignore = dirty

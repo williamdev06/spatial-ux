@@ -1,0 +1,16 @@
+[configuration]
+
+entry_symbol = "gdsyntax_library_init"
+compatibility_minimum = "4.5"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://bin/libgdsyntax.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://bin/libgdsyntax.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://bin/libgdsyntax.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://bin/libgdsyntax.linux.template_release.x86_64.so"
+android.debug.arm64 = "res://bin/libgdsyntax.android.template_debug.arm64.so"
+android.release.arm64 = "res://bin/libgdsyntax.android.template_release.arm64.so"
+macos.debug = "res://bin/libgdsyntax.macos.template_debug.framework"
+macos.release = "res://bin/libgdsyntax.macos.template_release.framework"
