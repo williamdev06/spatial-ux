@@ -35,7 +35,9 @@ godot --path . -- --open=examples/demo_project
 - `--desktop`: force desktop mode even if an OpenXR runtime is present.
 
 The app starts in VR when OpenXR initialises, otherwise in desktop mode. Press
-F1 for the desktop controls; in VR the controls are on the left-wrist panel.
+F1 for the desktop controls. In VR, the menu button (≡) on the left controller
+brings up the menu in front of you: open a project (recent projects, or browse
+folders), toggle the keyboard, reset the world scale, and the controls.
 
 ## Functions, inputs and outputs
 

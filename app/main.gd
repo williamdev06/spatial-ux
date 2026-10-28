@@ -5,10 +5,13 @@ extends Node3D
 ##   godot --path . -- --open=C:/path/to/godot/project [--desktop]
 
 const SETTINGS_PATH := "user://settings.cfg"
+const MENU_SIZE := Vector2(0.9, 0.72)
+const MENU_DISTANCE := 0.8
 
 var workspace: Workspace
 var rig: Node3D
 var hud: Hud
+var menu: Panel3D ## VR only: the HUD as a panel the menu button summons.
 
 
 func _ready() -> void:
@@ -39,8 +42,12 @@ func _ready() -> void:
 	workspace.status_changed.connect(hud.set_status)
 	workspace.project_opened.connect(func(p):
 		hud.set_project(p)
-		_save_last_project(p))
+		_save_last_project(p)
+		hud.set_recent(_recent_projects())
+		if menu:
+			show_menu(false))
 	hud.open_requested.connect(func(p): workspace.open_project(p))
+	hud.set_recent(_recent_projects())
 
 	var path: String = args.get("open", _last_project())
 	if not path.is_empty():
@@ -49,17 +56,24 @@ func _ready() -> void:
 		workspace.open_project.call_deferred(path)
 	else:
 		hud.set_status("Open a Godot project folder to begin (try examples/demo_project).")
+		if menu:
+			# Give head tracking a moment so the menu lands in front of the viewer.
+			get_tree().create_timer(0.5).timeout.connect(func():
+				show_menu(true)
+				hud.show_open_dialog())
 
 
 func _mount_hud(use_xr: bool) -> void:
 	if use_xr:
-		var panel := Panel3D.new()
-		panel.setup_panel(hud, Vector2(0.42, 0.26))
-		var left: XRController3D = (rig as XRRig).hands.left.ctrl
-		left.add_child(panel)
-		panel.position = Vector3(0, 0.08, 0.08)
-		panel.rotation = Vector3(-PI / 3.0, 0, 0)
-		(rig as XRRig).hud_panel = panel
+		menu = Panel3D.new()
+		menu.name = "Menu"
+		menu.setup_panel(hud, MENU_SIZE)
+		add_child(menu)
+		menu.visible = false
+		(rig as XRRig).menu_pressed.connect(func(): show_menu(not menu.visible))
+		hud.close_requested.connect(show_menu.bind(false))
+		hud.keyboard_requested.connect(workspace.toggle_keyboard)
+		hud.reset_scale_requested.connect(workspace.reset_world_scale)
 	else:
 		var layer := CanvasLayer.new()
 		add_child(layer)
@@ -68,6 +82,18 @@ func _mount_hud(use_xr: bool) -> void:
 		hud.custom_minimum_size = Vector2(560, 0)
 		hud.mouse_filter = Control.MOUSE_FILTER_PASS
 		layer.add_child(hud)
+
+
+## Shows the VR menu in front of the viewer at about eye height, or hides it.
+func show_menu(on: bool) -> void:
+	menu.visible = on
+	if not on:
+		return
+	var head: Transform3D = rig.head_transform()
+	var fwd := -head.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
+	menu.global_transform = Transform3D(Basis.looking_at(fwd, Vector3.UP), head.origin + fwd * MENU_DISTANCE + Vector3.DOWN * 0.15)
 
 
 func _input(ev: InputEvent) -> void:
@@ -134,8 +160,19 @@ func _last_project() -> String:
 	return ""
 
 
+func _recent_projects() -> Array:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		return cfg.get_value("recent", "projects", [])
+	return []
+
+
 func _save_last_project(p: String) -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
 	cfg.set_value("recent", "last_project", p)
+	var recent: Array = cfg.get_value("recent", "projects", [])
+	recent.erase(p)
+	recent.push_front(p)
+	cfg.set_value("recent", "projects", recent.slice(0, Hud.MAX_RECENT))
 	cfg.save(SETTINGS_PATH)

@@ -44,6 +44,14 @@ func setup_panel(control: Control, p_size_m: Vector2) -> void:
 	add_child(handle)
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and viewport:
+		var on := is_visible_in_tree()
+		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+		for c in find_children("*", "StaticBody3D", true, false):
+			(c as StaticBody3D).collision_layer = Style.UI_LAYER if on else 0
+
+
 func send_key(ev: InputEvent) -> void:
 	viewport.push_input(ev)
 

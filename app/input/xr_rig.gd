@@ -10,7 +10,9 @@ extends XROrigin3D
 ##     or push/pull whatever is being dragged
 ##   either stick up/down while that hand points at a panel: scroll it (the
 ##     stick does nothing else meanwhile)
-##   B / Y: virtual keyboard    A: undo    X: redo    menu: HUD panel
+##   B / Y: virtual keyboard    A: undo    X: redo    ≡ (left): the menu
+
+signal menu_pressed
 
 const MOVE_SPEED := 1.5
 const SNAP_TURN := deg_to_rad(30.0)
@@ -21,7 +23,6 @@ const PANEL_SCROLL_SPEED := 12.0 ## Wheel notches per second at full stick.
 var workspace: Workspace
 var camera: XRCamera3D
 var hands := {} ## "left"/"right" -> {ctrl, pointer, ray, tip}
-var hud_panel: Panel3D
 var _snap_armed := true
 var _world_grab := {} ## pointer id -> last controller position in origin space
 var _scale_line: MeshInstance3D
@@ -155,8 +156,7 @@ func _on_button(button: String, side: String) -> void:
 			else:
 				workspace.redo()
 		"menu_button":
-			if hud_panel:
-				hud_panel.visible = not hud_panel.visible
+			menu_pressed.emit()
 
 
 ## One hand on empty space drags the rig; both hands drag it by their midpoint
