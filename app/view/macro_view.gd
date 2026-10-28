@@ -5,8 +5,6 @@ extends Node3D
 
 const IDEAL := 1.1 ## Ideal edge length (m).
 const MAX_STEPS := 600
-const BOARD_CLEARANCE := 0.8 ## How far behind an expanded class's boards others stay.
-const BOARD_HALF_WIDTH := 3.0
 
 var workspace: Node ## Workspace
 var nodes := {} ## class id -> ClassNode3D
@@ -113,7 +111,7 @@ func _base_color(base: String) -> Color:
 	return Color(0.65, 0.55, 0.85)
 
 
-## Restarts the simulation, e.g. after a class expanded and needs room.
+## Restarts the simulation, e.g. after a class expanded and its orbs need room.
 func reheat() -> void:
 	_temp = 0.3
 	_steps = 0
@@ -136,7 +134,7 @@ func _process(_dt: float) -> void:
 
 
 ## One Fruchterman-Reingold step. Expanded classes push harder so their
-## boards have room.
+## function orbs have room.
 func _simulate() -> void:
 	var ids := nodes.keys()
 	var disp := {}
@@ -148,7 +146,7 @@ func _simulate() -> void:
 			var b: ClassNode3D = nodes[ids[j]]
 			var d := a.position - b.position
 			var dist := maxf(d.length(), 0.01)
-			var k := IDEAL * (3.0 if a.expanded or b.expanded else 1.0)
+			var k := IDEAL * (1.8 if a.expanded or b.expanded else 1.0)
 			var f := d / dist * (k * k / dist)
 			disp[ids[i]] += f
 			disp[ids[j]] -= f
@@ -160,21 +158,6 @@ func _simulate() -> void:
 		var f := d / dist * (dist * dist / IDEAL) * (1.0 if e.kind != "calls" else 0.5)
 		disp[e.a] -= f
 		disp[e.b] += f
-	# Expanded classes show their boards in front of them: keep other spheres
-	# out of that slab by pushing them behind it.
-	for id in ids:
-		var e: ClassNode3D = nodes[id]
-		if not e.expanded:
-			continue
-		var fwd := e.boards_root.basis.z
-		var side := e.boards_root.basis.x
-		for oid in ids:
-			if oid == id:
-				continue
-			var rel: Vector3 = nodes[oid].position - e.position
-			var along := rel.dot(fwd)
-			if along > -BOARD_CLEARANCE and absf(rel.dot(side)) < BOARD_HALF_WIDTH:
-				disp[oid] -= fwd * (along + BOARD_CLEARANCE) * 4.0
 	for id in ids:
 		var n: ClassNode3D = nodes[id]
 		if n.pinned or n.expanded:

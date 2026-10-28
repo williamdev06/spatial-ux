@@ -14,6 +14,7 @@ const MIN_WORLD_SCALE := 0.05
 const MAX_WORLD_SCALE := 20.0
 const KEYBOARD_REACH := 1.2 ## A keyboard put further away than this is brought back.
 const KEYBOARD_TILT := deg_to_rad(35.0)
+const BOARD_SPAWN_OFFSET := 0.15 ## Boards open this far in front of their orb, towards the viewer.
 
 const STATEMENT_TEMPLATES := [
 	["if", "if condition:\n\tpass"],
@@ -40,7 +41,8 @@ var selection := { board = null, key = "" }
 var head_provider: Callable ## -> Transform3D of the viewer's head / camera
 var is_xr := false
 
-var _boards := {} ## class id -> Array[FunctionBoard]
+var _boards := {} ## class id -> Array[FunctionBoard]; open until closed
+var _board_root: Node3D
 var _dirty_files := {} ## res path -> external?
 var _panel: Panel3D ## Open edit / search panel, if any.
 var _wire := { pin = null, mesh = null, imesh = null, distance = 1.0 }
@@ -59,6 +61,9 @@ func _ready() -> void:
 	macro.workspace = self
 	macro.position = Vector3(0, 1.4, 0)
 	add_child(macro)
+	_board_root = Node3D.new()
+	_board_root.name = "Boards"
+	add_child(_board_root)
 	keyboard = VirtualKeyboard.new()
 	keyboard.name = "Keyboard"
 	keyboard.visible = false
@@ -115,6 +120,7 @@ func close_project() -> void:
 		for b in _boards[id]:
 			b.queue_free()
 	_boards.clear()
+	_pending_open.clear()
 	macro.clear()
 	selection = { board = null, key = "" }
 	project_path = ""
@@ -178,11 +184,16 @@ func _refresh_file(res_path: String, external: bool) -> void:
 	for id in _boards.keys():
 		for b in _boards[id].duplicate():
 			if b.file.res_path == res_path and not b.rebuild():
-				_boards[id].erase(b)
-				b.queue_free()
-	# New functions (made here or elsewhere) appear on expanded classes.
-	if _boards.has(cls) and macro.nodes.has(cls) and macro.nodes[cls].expanded:
-		_add_missing_boards(cls)
+				close_board(b)
+	_sync_orbs(cls)
+	# Functions created here open their board straight away.
+	for k in _pending_open.keys():
+		if k.begins_with(res_path + "|"):
+			var after = _pending_open[k]
+			_pending_open.erase(k)
+			var b := open_board(cls, k.get_slice("|", 1))
+			if b and is_instance_valid(after):
+				_place_beside(b, after)
 	if external:
 		status("Reloaded %s (changed on disk)" % res_path.get_file())
 	macro.refresh()
@@ -198,96 +209,82 @@ func toggle_class(class_id: String) -> void:
 	var n: ClassNode3D = macro.nodes.get(class_id)
 	if n == null:
 		return
+	n.expanded = not n.expanded
+	n.set_highlight(n.expanded)
 	if n.expanded:
-		for b in _boards.get(class_id, []):
-			b.queue_free()
-		_boards.erase(class_id)
-		n.expanded = false
-		n.set_highlight(false)
-		n.set_label_top(-1.0)
-	else:
-		n.expanded = true
-		n.set_highlight(true)
-		_face_viewer(n.boards_root)
-		_boards[class_id] = []
-		_add_missing_boards(class_id)
-		macro.reheat()
-		status("%s: %d functions" % [index.type_label(class_id), _boards[class_id].size()])
+		_face_viewer(n.orbs_root)
+	_sync_orbs(class_id)
+	macro.reheat()
+	if n.expanded:
+		status("%s: %d functions" % [index.type_label(class_id), n.orbs.size()])
 
 
-func _add_missing_boards(class_id: String) -> void:
+## Shows the class's function orbs (marking the ones with open boards), or
+## hides them when the class is collapsed.
+func _sync_orbs(class_id: String) -> void:
+	var n: ClassNode3D = macro.nodes.get(class_id)
 	var c: ProjectIndex.ScriptClass = index.classes.get(class_id)
-	if c == null:
+	if n == null or c == null:
 		return
-	var sf: ScriptFile = index.files.get(c.res_path)
-	var n: ClassNode3D = macro.nodes[class_id]
+	var quals := []
+	if n.expanded and index.files.has(c.res_path):
+		for f in index.files[c.res_path].functions():
+			quals.append(f.qualname)
 	var open := {}
-	for b in _boards[class_id]:
+	for b in _boards.get(class_id, []):
 		open[b.qualname] = true
-	var unplaced: Array[FunctionBoard] = []
-	for f in sf.functions():
-		if open.has(f.qualname):
-			continue
-		var b := FunctionBoard.new().setup(self, sf, f.qualname)
-		n.boards_root.add_child(b)
-		b.rebuild()
+	n.set_functions(quals, open)
+
+
+## Opens the board of `qualname` (a function of top-level class `class_id`)
+## centred just in front of its orb and facing the viewer. An already open
+## board is brought back there. Boards stay open until closed.
+func open_board(class_id: String, qualname: String) -> FunctionBoard:
+	var c: ProjectIndex.ScriptClass = index.classes.get(class_id)
+	if c == null or not index.files.has(c.res_path):
+		return null
+	var sf: ScriptFile = index.files[c.res_path]
+	var b: FunctionBoard = null
+	for x in _boards.get(class_id, []):
+		if x.qualname == qualname:
+			b = x
+	if b == null:
+		b = FunctionBoard.new().setup(self, sf, qualname)
+		_board_root.add_child(b)
+		if not b.rebuild():
+			b.queue_free()
+			return null
+		if not _boards.has(class_id):
+			_boards[class_id] = []
 		_boards[class_id].append(b)
-		var stored = layout_store.get_board(sf.res_path, f.qualname)
-		var near: FunctionBoard = _pending_place.get(sf.res_path + "|" + f.qualname)
-		_pending_place.erase(sf.res_path + "|" + f.qualname)
-		if stored != null:
-			b.transform = stored
-		elif is_instance_valid(near) and near.get_parent() == b.get_parent():
-			# Created from another board: put it right next to that one.
-			var nr := near.bounds()
-			var br := b.bounds()
-			b.transform = near.transform.translated_local(Vector3(nr.position.x + nr.size.x + 0.2 - br.position.x, -nr.position.y + br.position.y, 0))
-			board_moved(b)
-		else:
-			unplaced.append(b)
-	_arrange_boards(n, unplaced)
-	var top := 0.0
-	for b in _boards[class_id]:
-		top = maxf(top, b.position.y - b.bounds().position.y + 0.1)
-	n.set_label_top(top)
+		_sync_orbs(class_id)
+	var n: ClassNode3D = macro.nodes.get(class_id)
+	var anchor: Node3D = n.orbs.get(qualname, n) if n else null
+	_place_board(b, anchor.global_position if anchor else b.global_position)
+	return b
 
 
-## Packs boards into centred rows in front of the class node. Rows stack
-## upward from just above the floor (boards hang down from their top-left
-## corner, so tall boards would otherwise sink through it); boards already
-## open stay where they are and new rows go above them.
-func _arrange_boards(n: ClassNode3D, boards: Array[FunctionBoard]) -> void:
-	if boards.is_empty():
-		return
-	const MAX_ROW := 5.0
-	const GAP := 0.2
-	const FLOOR_CLEARANCE := 0.25
-	var rows: Array = [[]]
-	var width := 0.0
-	for b in boards:
-		var w := b.bounds().size.x
-		if not rows[-1].is_empty() and width + w > MAX_ROW:
-			rows.append([])
-			width = 0.0
-		rows[-1].append(b)
-		width += w + GAP
-	var bottom := (FLOOR_CLEARANCE - n.global_position.y) / n.boards_root.global_basis.get_scale().y
-	for b in _boards.get(n.class_id, []):
-		if not boards.has(b):
-			bottom = maxf(bottom, b.position.y - b.bounds().position.y + GAP)
-	for row in rows:
-		var row_w := -GAP
-		var row_h := 0.0
-		for b in row:
-			row_w += b.bounds().size.x + GAP
-			row_h = maxf(row_h, b.bounds().size.y)
-		var x := -row_w * 0.5
-		for b in row:
-			var r: Rect2 = b.bounds()
-			# Board origin -> bounds: local x in [r.x, r.x + w], local y in [-(r.y + h), -r.y].
-			b.position = Vector3(x - r.position.x, bottom + row_h + r.position.y, 0.3)
-			x += r.size.x + GAP
-		bottom += row_h + GAP + 0.1
+## Centres `b` just in front of `at` (towards the viewer), facing the viewer.
+func _place_board(b: FunctionBoard, at: Vector3) -> void:
+	var head: Vector3 = head_provider.call().origin if head_provider.is_valid() else at + Vector3.BACK
+	var to_head := head - at
+	if to_head.length() < 0.01:
+		to_head = Vector3.BACK
+	var dir := to_head.normalized()
+	var up := Vector3.UP if absf(dir.y) < 0.99 else Vector3.BACK
+	var s := world_scale()
+	var basis := Basis.looking_at(-dir, up).scaled(Vector3.ONE * s)
+	var spot := at + dir * minf(BOARD_SPAWN_OFFSET * s, to_head.length() * 0.5)
+	var r := b.bounds()
+	var centre := Vector3(r.position.x + r.size.x * 0.5, -r.position.y - r.size.y * 0.5, 0)
+	b.global_transform = Transform3D(basis, spot - basis * centre)
+
+
+## Puts `b` to the right of `near`, tops aligned (for "+ func" on a board).
+func _place_beside(b: FunctionBoard, near: FunctionBoard) -> void:
+	var nr := near.bounds()
+	var br := b.bounds()
+	b.transform = near.transform.translated_local(Vector3(nr.position.x + nr.size.x + 0.2 - br.position.x, -nr.position.y + br.position.y, 0))
 
 
 func _face_viewer(node: Node3D) -> void:
@@ -303,15 +300,12 @@ func _face_viewer(node: Node3D) -> void:
 
 func close_board(b: FunctionBoard) -> void:
 	for id in _boards:
-		_boards[id].erase(b)
+		if _boards[id].has(b):
+			_boards[id].erase(b)
+			_sync_orbs(id)
 	if selection.board == b:
 		selection = { board = null, key = "" }
 	b.queue_free()
-
-
-func board_moved(b: FunctionBoard) -> void:
-	layout_store.set_board(b.file.res_path, b.qualname, b.transform)
-	layout_changed()
 
 
 func relayout(b: FunctionBoard) -> void:
@@ -495,7 +489,7 @@ const BASIC_TYPES := ["void", "bool", "int", "float", "String", "StringName", "V
 	"Color", "Array", "Dictionary", "Callable", "Signal", "NodePath", "Variant"]
 const DELETE_CONFIRM_MS := 3000
 
-var _pending_place := {} ## "res|qualname" -> FunctionBoard to put a new board next to
+var _pending_open := {} ## "res|qualname" of a function just created -> board to put it beside, or null
 var _delete_armed := {} ## FunctionBoard -> ticks of the first click
 
 
@@ -671,13 +665,7 @@ func create_function(class_id: String, after: FunctionBoard, text: String) -> bo
 		status("Could not add %s here" % sig.name)
 		return false
 	_last_file = sf
-	var top := c.id
-	while not index.classes[top].outer.is_empty():
-		top = index.classes[top].outer
-	if after:
-		_pending_place[sf.res_path + "|" + qual] = after
-	if macro.nodes.has(top) and not macro.nodes[top].expanded:
-		toggle_class(top)
+	_pending_open[sf.res_path + "|" + qual] = after
 	status("Created %s" % qual)
 	return true
 

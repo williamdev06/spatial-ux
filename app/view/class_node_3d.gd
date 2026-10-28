@@ -1,18 +1,23 @@
 class_name ClassNode3D
 extends Node3D
-## A script/class in the macro view. Click to expand into its function boards
-## (which hang off `boards_root` and move with it); drag to move.
+## A script/class in the macro view. Click to show its functions as a ring of
+## orbs (they hang off `orbs_root`, which faces the viewer, and move with the
+## sphere); click again to hide them. Drag to move.
+
+const ORB_SPACING := 0.14 ## Arc length between neighbouring orbs.
 
 var macro: Node3D ## MacroView
 var class_id := ""
 var expanded := false
 var pinned := false
 var radius := 0.08
-var boards_root: Node3D
+var orbs_root: Node3D
+var orbs := {} ## qualname -> FunctionOrb3D
 var _sphere: MeshInstance3D
 var _label: Label3D
 var _move: MoveDrag
 var _add_func: Button3D
+var _spokes := ImmediateMesh.new()
 
 
 func setup(p_macro: Node3D, id: String, title: String, subtitle: String, color: Color, func_count: int) -> ClassNode3D:
@@ -31,16 +36,42 @@ func setup(p_macro: Node3D, id: String, title: String, subtitle: String, color: 
 	_label.pixel_size = 0.0022
 	add_child(_label)
 	add_child(Style.collider(self, Vector3.ONE * radius * 2.2))
-	boards_root = Node3D.new()
-	boards_root.name = "Boards"
-	add_child(boards_root)
+	orbs_root = Node3D.new()
+	orbs_root.name = "Orbs"
+	add_child(orbs_root)
+	var spokes := MeshInstance3D.new()
+	spokes.mesh = _spokes
+	spokes.material_override = Style.material(Color(0.45, 0.72, 1.0, 0.35))
+	orbs_root.add_child(spokes)
 	return self
 
 
-## Lifts the label above the expanded boards (`top` in local space), or back
-## onto the sphere when `top` is negative.
-func set_label_top(top: float) -> void:
-	_label.position.y = top + 0.12 if top >= 0.0 else radius + 0.02
+## Shows one orb per function (in source order, clockwise from the top as the
+## viewer sees it), or none for an empty list. `open` holds the qualnames
+## whose boards are open.
+func set_functions(qualnames: Array, open: Dictionary) -> void:
+	for q in orbs.keys():
+		if not qualnames.has(q):
+			orbs[q].queue_free()
+			orbs.erase(q)
+	var ring := maxf(radius + 0.16, qualnames.size() * ORB_SPACING / TAU)
+	_spokes.clear_surfaces()
+	if not qualnames.is_empty():
+		_spokes.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in qualnames.size():
+		var q: String = qualnames[i]
+		if not orbs.has(q):
+			orbs[q] = FunctionOrb3D.new().setup(self, q)
+			orbs_root.add_child(orbs[q])
+		var a := TAU * i / qualnames.size()
+		var orb: FunctionOrb3D = orbs[q]
+		orb.position = Vector3(sin(a), cos(a), 0) * ring
+		orb.set_open(open.has(q))
+		_spokes.surface_add_vertex(orb.position.normalized() * radius)
+		_spokes.surface_add_vertex(orb.position.normalized() * (ring - FunctionOrb3D.RADIUS))
+	if not qualnames.is_empty():
+		_spokes.surface_end()
+	_label.position.y = ring + 0.08 if not qualnames.is_empty() else radius + 0.02
 
 
 func set_highlight(on: bool) -> void:
@@ -48,7 +79,7 @@ func set_highlight(on: bool) -> void:
 	if _add_func == null:
 		_add_func = Button3D.new().setup("+ func", Style.FONT)
 		_add_func.pressed.connect(func(): macro.workspace.prompt_new_function(class_id))
-		boards_root.add_child(_add_func)
+		orbs_root.add_child(_add_func)
 		_add_func.position = Vector3(-_add_func.width() * 0.5, -radius - 0.03, 0.05)
 	_add_func.visible = on
 	for c in _add_func.find_children("*", "StaticBody3D", true, false):

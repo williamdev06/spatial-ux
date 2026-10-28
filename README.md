@@ -43,7 +43,7 @@ Each board's top node is the function's signature: its name, one row per
 input (parameter) and the output (return type). Every change is one text
 edit to the signature line.
 
-- **New function:** click "+ func" on a board's title bar (or press N with a node selected) to add it right after that function, with its board placed alongside. Or click "+ func" under an expanded class sphere to add it at the end of the class. Type `name(a: int) -> float`; the body starts as `pass`, or as a default `return` that compiles for the output type.
+- **New function:** click "+ func" on a board's title bar (or press N with a node selected) to add it right after that function, with its board placed alongside. Or click "+ func" under an expanded class sphere (its function orbs showing) to add it at the end of the class. Type `name(a: int) -> float`; the body starts as `pass`, or as a default `return` that compiles for the output type.
 - **Inputs:** click "+ input" (or press I), then type `name: Type` or `name := default`. Required inputs are inserted before defaulted ones. Click an input to edit it; clear it to remove it.
 - **Output:** click "returns" for a type picker; anything typed in its filter, such as `Array[Vector3]`, can be used as is.
 - **Rename** with the name field, or double-click the func node to edit the whole signature. The board and its saved layout follow the new name.
@@ -76,7 +76,7 @@ godot --headless --path . --script res://tests/smoke_app.gd
 | `gdextension/` | `GDSyntaxDocument`: UTF-8 buffer + tree-sitter CST, `apply_edits`, incremental re-parse. |
 | `app/core/` | `ScriptFile` (file, undo, external-change polling), `FunctionGraph` (CST → statements, exec edges, fields), `GraphEdits` (graph ops → byte edits), `SugiyamaLayout` / `FunctionLayout`, `LayoutStore` (`.graphlayout.json`). |
 | `app/index/` | `ProjectIndex` (ClassDB + `data/builtin_api.json` + project scripts + usage/recency), `TypeResolver` (static types), `MemberSearch` (ranked drag-off candidates, fuzzy filter). |
-| `app/view/` | Boards, statement nodes, pins, wires, macro force graph, 3D panels, virtual keyboard, HUD. |
+| `app/view/` | Boards, statement nodes, pins, wires, macro force graph, function orbs, 3D panels, virtual keyboard, HUD. |
 | `app/input/` | `Pointer` / `Interaction` (one input model for mouse and controllers), desktop fly rig, OpenXR rig. |
 | `tools/extract_builtin_api.py` | Regenerates `data/builtin_api.json` from `godot --dump-extension-api`. |
 

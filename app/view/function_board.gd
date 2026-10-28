@@ -222,9 +222,7 @@ func ix_drag(p: Pointer) -> void:
 		_move.update(p)
 
 
-func ix_release(p: Pointer, _hit: Dictionary) -> void:
-	if _move and p.moved_since_press >= Interaction.CLICK_MAX_MOVE:
-		workspace.board_moved(self)
+func ix_release(_p: Pointer, _hit: Dictionary) -> void:
 	_move = null
 
 
@@ -252,5 +250,4 @@ func ix_grab_drag(p: Pointer) -> void:
 
 
 func ix_ungrab(_p: Pointer) -> void:
-	workspace.board_moved(self)
 	_move = null

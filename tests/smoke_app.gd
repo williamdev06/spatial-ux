@@ -41,15 +41,35 @@ func _run() -> void:
 	for id in ws.macro.nodes.keys():
 		ws.toggle_class(id)
 	await frames(5)
-	var boards := ws.all_boards()
-	check(boards.size() >= 14, "boards for every function (got %d)" % boards.size())
+	var orb_count := 0
+	for id in ws.macro.nodes:
+		orb_count += ws.macro.nodes[id].orbs.size()
+	check(orb_count >= 14, "an orb for every function (got %d)" % orb_count)
+	check(ws.all_boards().is_empty(), "expanding opens no boards")
 
+	# Clicking an orb opens its board centred in front of it, facing the viewer.
 	var player_file: ScriptFile = ws.index.files["res://actors/player.gd"]
-	var b: FunctionBoard = null
-	for x in boards:
-		if x.file == player_file and x.qualname == "take_damage":
-			b = x
-	check(b != null, "take_damage board")
+	var orb: FunctionOrb3D = ws.macro.nodes["Player"].orbs["take_damage"]
+	var head: Vector3 = ws.head_provider.call().origin
+	var op := Pointer.new()
+	op.id = "orbtest"
+	op.origin = orb.global_position + (head - orb.global_position).normalized() * 0.3
+	op.direction = (orb.global_position - op.origin).normalized()
+	ws.interaction.add_pointer(op)
+	await frames(2)
+	op.pressed = true
+	await frames(2)
+	op.pressed = false
+	await frames(2)
+	ws.interaction.pointers.erase(op)
+	var b: FunctionBoard = _board(ws, player_file, "take_damage")
+	check(b != null, "orb click opens take_damage board")
+	var r := b.bounds()
+	var centre := b.to_global(Vector3(r.position.x + r.size.x * 0.5, -r.position.y - r.size.y * 0.5, 0))
+	var to_head := (head - centre).normalized()
+	check(b.global_basis.z.normalized().dot(to_head) > 0.99, "board faces the viewer")
+	check(absf((centre - orb.global_position).length() - Workspace.BOARD_SPAWN_OFFSET) < 0.01 and (centre - orb.global_position).normalized().dot(to_head) > 0.99, "board centred just in front of its orb")
+	check(ws.all_boards().size() == 1, "only that board opened")
 	var before := player_file.doc.get_source()
 
 	# Field edit.
@@ -147,12 +167,16 @@ func _run() -> void:
 	check(changed <= 3, "only edited lines changed (%d new lines)" % changed)
 	check(after.contains("# Gravity first, then input."), "comments preserved")
 
+	ws.open_board("Player", "heal")
+	ws.open_board("Player", "attack_nearest")
 	await _function_ops(player_file)
 
-	# Clicking the macro node collapses it.
+	# Collapsing a class hides its orbs; open boards stay.
+	var open_before := ws.all_boards().size()
 	ws.toggle_class("Player")
 	await frames(2)
-	check(ws._boards.get("Player") == null, "collapsed")
+	check(ws.macro.nodes["Player"].orbs.is_empty(), "collapsed")
+	check(ws.all_boards().size() == open_before and open_before > 0, "boards stay open (%d)" % open_before)
 
 	print("\nsmoke: %d failures" % failures)
 	quit(1 if failures > 0 else 0)
