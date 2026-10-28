@@ -37,6 +37,23 @@ godot --path . -- --open=examples/demo_project
 The app starts in VR when OpenXR initialises, otherwise in desktop mode. Press
 F1 for the desktop controls; in VR the controls are on the left-wrist panel.
 
+## Functions, inputs and outputs
+
+Each board's top node is the function's signature: its name, one row per
+input (parameter) and the output (return type). Every change is one text
+edit to the signature line.
+
+- **New function:** click "+ func" on a board's title bar (or press N with a node selected) to add it right after that function, with its board placed alongside. Or click "+ func" under an expanded class sphere to add it at the end of the class. Type `name(a: int) -> float`; the body starts as `pass`, or as a default `return` that compiles for the output type.
+- **Inputs:** click "+ input" (or press I), then type `name: Type` or `name := default`. Required inputs are inserted before defaulted ones. Click an input to edit it; clear it to remove it.
+- **Output:** click "returns" for a type picker; anything typed in its filter, such as `Array[Vector3]`, can be used as is.
+- **Rename** with the name field, or double-click the func node to edit the whole signature. The board and its saved layout follow the new name.
+- **From the graph:**
+  - Dragging off an input pin offers "+ new input", which adds a parameter of the expected type and wires it in.
+  - Dragging off a value offers "return … as the function's output", which inserts the `return` and sets the return type.
+- **Delete** a function with "delete" on its title bar; it needs a second click to confirm. Ctrl+Z undoes any of these as one step.
+
+Call sites are not updated when a function is renamed or its inputs change.
+
 ## Test
 
 ```bash
@@ -47,7 +64,7 @@ godot --headless --path . --script res://tests/smoke_app.gd
 ```
 
 - `test_parser`: parse, edit and re-parse round trips; untouched bytes stay identical; incremental tree equals a fresh parse; CRLF, BOM and UTF-8 handling.
-- `test_function_graph`, `test_graph_edits`: CST to graph mapping, and every edit operation checked against the exact resulting text.
+- `test_function_graph`, `test_graph_edits`, `test_function_edits`: CST to graph mapping, and every statement- and function-level edit checked against the exact resulting text.
 - `test_corpus`: byte-identical load/save, fuzzed token edits and random graph operations over every `.gd` under `app/`, `tests/` and `~/Downloads/godot-demo-projects-master` (or `--corpus`). Each graph operation must only change the lines it is about and never introduce a parse error.
 - `test_index`, `test_layout`: project index, type resolution, drag-off ranking, layout and the sidecar.
 - `smoke_app.gd`: drives the full app headless against a temp copy of the demo project.

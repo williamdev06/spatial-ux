@@ -24,3 +24,6 @@ bin/*.exp
 bin/*.lib
 bin/*.pdb
 bin/*.ilk
+
+# Godot hot-reload copies of the extension
+bin/~*

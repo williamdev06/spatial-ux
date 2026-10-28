@@ -30,7 +30,7 @@ func build(p_board: Node3D, s: FunctionGraph.Stmt) -> StmtNode3D:
 	if s.kind == "code":
 		code_lines = mini(field_rows[0].count("\n") + 1, CODE_MAX_LINES)
 	var rows := maxi(field_rows.size(), branch_pins.size()) + (code_lines - 1 if code_lines > 0 else 0)
-	var w := Style.text_width(s.title, Style.FONT_TITLE) + 0.08
+	var w := Style.text_width(s.title, Style.FONT_TITLE) + (0.2 if s.kind == "entry" else 0.08)
 	for i in field_rows.size():
 		var rw: float = branch_pins[i].length() * 0.012 if i < branch_pins.size() else 0.0
 		for line in field_rows[i].split("\n"):
@@ -92,9 +92,15 @@ func build(p_board: Node3D, s: FunctionGraph.Stmt) -> StmtNode3D:
 		var fc := Style.collider(self, Vector3(fw, hit_h, 0.016), Vector3(Style.PAD + fw * 0.5, y, 0.0))
 		fc.set_meta("field", f.name)
 		add_child(fc)
-		if s.kind != "code":
+		if s.kind != "code" and s.kind != "entry":
 			_add_pin("data_in", f.name, Vector3(0, y, 0.004), f.expect_type, Vector3.LEFT)
 		row += lines
+
+	if s.kind == "entry":
+		var add := Button3D.new().setup("+ input", Style.FONT_SMALL)
+		add.position = Vector3(w - add.width() - 0.012, -Style.HEADER * 0.12, 0.005)
+		add.pressed.connect(func(): board.workspace.add_input(board))
+		add_child(add)
 
 	# Data outputs.
 	for j in s.data_outs.size():

@@ -356,7 +356,14 @@ func _annotate_call(g: FunctionGraph, s: FunctionGraph.Stmt) -> void:
 	if m:
 		sig_args = m.args
 		ret = member_value_type(m, true) if m.kind == "method" else ""
-		s.title = s.call_name + "()" if parts.target.is_empty() else s.call_name + "()"
+	# `some_signal.emit(...)` takes the signal's declared parameters.
+	if receiver == "Signal" and s.call_name == "emit":
+		var chain := Cst.named(e)
+		var sig_owner := self_type if chain.size() <= 2 else resolve_chain(e, chain.size() - 2)
+		var sig := index.find_member(sig_owner, file.text(chain[-2])) if chain.size() >= 2 and chain[-2].type == "identifier" else null
+		if sig and sig.kind == "signal":
+			sig_args = sig.args
+			s.title = "emit " + sig.name
 	var res: FunctionGraph.DataOut = s.get_data_out("result")
 	if res:
 		res.type = ret

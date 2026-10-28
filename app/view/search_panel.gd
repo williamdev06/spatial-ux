@@ -11,10 +11,13 @@ var _all: Array = []
 var _shown: Array = [] ## Item index -> Candidate (null for group headers)
 var _filter: LineEdit
 var _list: ItemList
+var _allow_custom := false
 
 
-func open(title: String, candidates: Array) -> void:
+## With `allow_custom`, whatever is typed in the filter can be picked as is.
+func open(title: String, candidates: Array, allow_custom := false) -> void:
 	_all = candidates
+	_allow_custom = allow_custom
 	var pc := PanelContainer.new()
 	pc.theme = Panel3D.make_theme()
 	var vb := VBoxContainer.new()
@@ -41,6 +44,14 @@ func open(title: String, candidates: Array) -> void:
 
 func _refresh() -> void:
 	var filtered := MemberSearch.filter(_all, _filter.text)
+	var typed := _filter.text.strip_edges()
+	if _allow_custom and not typed.is_empty() and (filtered.is_empty() or filtered[0].label != typed):
+		var custom := MemberSearch.Candidate.new()
+		custom.label = typed
+		custom.detail = "(use as typed)"
+		custom.expr = typed
+		custom.group_label = "Typed"
+		filtered.push_front(custom)
 	_list.clear()
 	_shown.clear()
 	var last_group := ""

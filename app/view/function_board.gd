@@ -43,13 +43,16 @@ func setup(ws: Node, sf: ScriptFile, p_qualname: String) -> FunctionBoard:
 	add_child(_title)
 	_buttons = Node3D.new()
 	add_child(_buttons)
-	var relayout := Button3D.new().setup("auto layout")
-	relayout.pressed.connect(func(): workspace.relayout(self))
-	_buttons.add_child(relayout)
-	var close := Button3D.new().setup("close")
-	close.position.x = relayout.width() + 0.01
-	close.pressed.connect(func(): workspace.close_board(self))
-	_buttons.add_child(close)
+	var x := 0.0
+	for spec in [["+ func", func(): workspace.prompt_new_function(self_type, self)],
+			["auto layout", func(): workspace.relayout(self)],
+			["close", func(): workspace.close_board(self)],
+			["delete", func(): workspace.delete_function(self)]]:
+		var btn := Button3D.new().setup(spec[0])
+		btn.position.x = x
+		btn.pressed.connect(spec[1])
+		_buttons.add_child(btn)
+		x += btn.width() + 0.01
 	return self
 
 

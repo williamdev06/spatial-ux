@@ -119,6 +119,16 @@ func set_node(res_path: String, qualname: String, s: FunctionGraph.Stmt, pos: Ve
 	dirty = true
 
 
+## Keeps board and node positions when a function is renamed.
+func rename_function(res_path: String, old_qualname: String, new_qualname: String) -> void:
+	var e := _func_entry(res_path, old_qualname, false)
+	if e.is_empty():
+		return
+	data.scripts[res_path].functions.erase(old_qualname)
+	data.scripts[res_path].functions[new_qualname] = e
+	dirty = true
+
+
 func clear_nodes(res_path: String, qualname: String) -> void:
 	var e := _func_entry(res_path, qualname, false)
 	if not e.is_empty():

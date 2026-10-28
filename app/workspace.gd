@@ -174,10 +174,10 @@ func _refresh_file(res_path: String, external: bool) -> void:
 			if b.file.res_path == res_path and not b.rebuild():
 				_boards[id].erase(b)
 				b.queue_free()
+	# New functions (made here or elsewhere) appear on expanded classes.
+	if _boards.has(cls) and macro.nodes.has(cls) and macro.nodes[cls].expanded:
+		_add_missing_boards(cls)
 	if external:
-		# New functions appear on expanded classes.
-		if _boards.has(cls) and macro.nodes.has(cls) and macro.nodes[cls].expanded:
-			_add_missing_boards(cls)
 		status("Reloaded %s (changed on disk)" % res_path.get_file())
 	macro.refresh()
 
@@ -198,12 +198,14 @@ func toggle_class(class_id: String) -> void:
 		_boards.erase(class_id)
 		n.expanded = false
 		n.set_highlight(false)
+		n.set_label_top(-1.0)
 	else:
 		n.expanded = true
 		n.set_highlight(true)
 		_face_viewer(n.boards_root)
 		_boards[class_id] = []
 		_add_missing_boards(class_id)
+		macro.reheat()
 		status("%s: %d functions" % [index.type_label(class_id), _boards[class_id].size()])
 
 
@@ -225,11 +227,23 @@ func _add_missing_boards(class_id: String) -> void:
 		b.rebuild()
 		_boards[class_id].append(b)
 		var stored = layout_store.get_board(sf.res_path, f.qualname)
+		var near: FunctionBoard = _pending_place.get(sf.res_path + "|" + f.qualname)
+		_pending_place.erase(sf.res_path + "|" + f.qualname)
 		if stored != null:
 			b.transform = stored
+		elif is_instance_valid(near) and near.get_parent() == b.get_parent():
+			# Created from another board: put it right next to that one.
+			var nr := near.bounds()
+			var br := b.bounds()
+			b.transform = near.transform.translated_local(Vector3(nr.position.x + nr.size.x + 0.2 - br.position.x, -nr.position.y + br.position.y, 0))
+			board_moved(b)
 		else:
 			unplaced.append(b)
 	_arrange_boards(n, unplaced)
+	var top := 0.0
+	for b in _boards[class_id]:
+		top = maxf(top, b.position.y - b.bounds().position.y + 0.1)
+	n.set_label_top(top)
 
 
 ## Packs boards into centred rows in front of the class node. Rows stack
@@ -426,6 +440,9 @@ func edit_field(b: FunctionBoard, key: String, field_name: String) -> void:
 	if s.kind == "code":
 		edit_raw(b, key)
 		return
+	if s.kind == "entry":
+		_edit_entry_field(b, f)
+		return
 	var title := "%s › %s" % [s.title, f.label if not f.label.is_empty() else f.name]
 	if not f.expect_type.is_empty():
 		title += "   (%s)" % index.type_label(f.expect_type)
@@ -449,7 +466,7 @@ func edit_raw(b: FunctionBoard, key: String) -> void:
 	if s == null:
 		return
 	if s.kind == "entry":
-		edit_field(b, key, "params")
+		edit_signature(b)
 		return
 	var p := EditPanel.new()
 	_show_panel(p, b.nodes[key])
@@ -464,6 +481,244 @@ func edit_raw(b: FunctionBoard, key: String) -> void:
 			return GraphEdits.replace_statement(b.file.doc, ss, _adapt_indent(text, b.file)))
 	)
 	p.cancelled.connect(_close_panel)
+
+
+# --- functions: create, delete, rename, inputs and output ------------------------------
+
+const BASIC_TYPES := ["void", "bool", "int", "float", "String", "StringName", "Vector2", "Vector2i", "Vector3", "Vector3i",
+	"Color", "Array", "Dictionary", "Callable", "Signal", "NodePath", "Variant"]
+const DELETE_CONFIRM_MS := 3000
+
+var _pending_place := {} ## "res|qualname" -> FunctionBoard to put a new board next to
+var _delete_armed := {} ## FunctionBoard -> ticks of the first click
+
+
+func _edit_entry_field(b: FunctionBoard, f: FunctionGraph.Field) -> void:
+	var near: Node3D = b.nodes["entry"]
+	if f.name == "name":
+		_prompt(near, "Rename %s" % b.qualname, f.text, func(t: String): rename_function(b, t))
+	elif f.name == "ret":
+		_pick_type(b, "Output (return type) of %s" % b.qualname, func(t: String): _set_entry_field(b, "ret", "" if t == "void" and f.is_absent() else t))
+	elif f.name.begins_with("param"):
+		var i := f.name.trim_prefix("param").to_int()
+		_prompt(near, "Input of %s" % b.qualname, f.text, func(t: String):
+			if t.strip_edges().is_empty():
+				remove_input(b, i)
+			else:
+				_set_entry_field(b, f.name, t),
+			"name: Type = default   ·   empty removes the input")
+
+
+func _prompt(near: Node3D, title: String, text: String, on_commit: Callable, hint := "") -> void:
+	var p := EditPanel.new()
+	_show_panel(p, near)
+	p.open(title, text, false, hint)
+	p.committed.connect(func(t: String):
+		_close_panel()
+		on_commit.call(t))
+	p.cancelled.connect(_close_panel)
+
+
+func _set_entry_field(b: FunctionBoard, fname: String, text: String) -> bool:
+	return run_op(b, func(g):
+		var e: FunctionGraph.Stmt = g.get_stmt("entry")
+		var f: FunctionGraph.Field = e.get_field(fname)
+		return GraphEdits.set_field(b.file.doc, e, f, text) if f else {})
+
+
+## Shows a type list (with a free-text option) and calls on_pick(type).
+func _pick_type(b: FunctionBoard, title: String, on_pick: Callable) -> void:
+	var cands := []
+	var add := func(t: String, group: String):
+		var c := MemberSearch.Candidate.new()
+		c.label = t
+		c.expr = t
+		c.kind = "type"
+		c.group_label = group
+		cands.append(c)
+	for t in BASIC_TYPES:
+		add.call(t, "Basic")
+	var project := index.class_names.keys()
+	project.sort()
+	for t in project:
+		add.call(t, "Project")
+	var engine := Array(ClassDB.get_class_list())
+	engine.sort()
+	for t in engine:
+		if not str(t).begins_with("_"):
+			add.call(t, "Engine")
+	for i in cands.size():
+		cands[i].rank = i
+	var p := SearchPanel.new()
+	_show_panel(p, b.nodes["entry"])
+	p.open(title, cands, true)
+	p.chosen.connect(func(c: MemberSearch.Candidate):
+		_close_panel()
+		on_pick.call(c.expr))
+	p.cancelled.connect(_close_panel)
+
+
+func add_input(b: FunctionBoard, preset := "value: int") -> void:
+	_prompt(b.nodes["entry"], "New input for %s" % b.qualname, preset, func(t: String):
+		if run_op(b, func(g): return GraphEdits.add_param(b.file.doc, g, t)):
+			status("Added input %s" % t.strip_edges())
+		else:
+			status("Not a valid new input (bad or duplicate name?)"),
+		"name: Type   ·   name := default")
+
+
+func remove_input(b: FunctionBoard, index_: int) -> void:
+	if run_op(b, func(g): return GraphEdits.remove_param(b.file.doc, g, index_)):
+		status("Removed input (call sites are not updated)")
+
+
+## Qualname prefix ("Inner." etc.) for functions of `qualname`'s class.
+static func _qual_prefix(qualname: String) -> String:
+	var dot := qualname.rfind(".")
+	return qualname.substr(0, dot + 1) if dot >= 0 else ""
+
+
+func rename_function(b: FunctionBoard, new_name: String) -> void:
+	var n := new_name.strip_edges()
+	if not n.is_valid_identifier():
+		status("'%s' is not a valid function name" % n)
+		return
+	var old := b.qualname
+	var new_qual := _qual_prefix(old) + n
+	if new_qual == old:
+		return
+	if not b.file.find_function(new_qual).is_empty():
+		status("%s already exists" % new_qual)
+		return
+	if _set_entry_field(b, "name", n):
+		_retarget_board(b, old, new_qual)
+		status("Renamed %s to %s (call sites are not updated)" % [old, new_qual])
+
+
+func edit_signature(b: FunctionBoard) -> void:
+	var f := b.file.find_function(b.qualname)
+	if f.is_empty():
+		return
+	var name_node := Cst.field(f.node, "name")
+	var ret := Cst.field(f.node, "return_type")
+	var params := Cst.field(f.node, "parameters")
+	var current := b.file.doc.get_text(name_node.start, ret.end if not ret.is_empty() else params.end)
+	_prompt(b.nodes["entry"], "Signature of %s" % b.qualname, current, func(t: String):
+		var sig := GraphEdits.parse_signature(t)
+		if sig.is_empty():
+			status("Not a valid signature")
+			return
+		var old := b.qualname
+		var new_qual: String = _qual_prefix(old) + sig.name
+		if new_qual != old and not b.file.find_function(new_qual).is_empty():
+			status("%s already exists" % new_qual)
+			return
+		if run_op(b, func(g): return GraphEdits.set_signature(b.file.doc, g, t)) and new_qual != old:
+			_retarget_board(b, old, new_qual),
+		"name(inputs) -> output")
+
+
+func _retarget_board(b: FunctionBoard, old: String, new_qual: String) -> void:
+	b.qualname = new_qual
+	b.name = "Board_" + new_qual.replace(".", "_")
+	layout_store.rename_function(b.file.res_path, old, new_qual)
+	layout_changed()
+
+
+## Asks for a signature and creates the function after `after` (or at the end
+## of the class when there is no board to anchor to).
+func prompt_new_function(class_id: String, after: FunctionBoard = null) -> void:
+	var near: Node3D = after if after else macro.nodes.get(class_id)
+	if near == null:
+		return
+	_prompt(near, "New function in %s" % index.type_label(class_id), "new_function() -> void", func(t: String):
+		create_function(class_id, after, t),
+		"name(inputs) -> output")
+
+
+func create_function(class_id: String, after: FunctionBoard, text: String) -> bool:
+	var sig := GraphEdits.parse_signature(text)
+	if sig.is_empty():
+		status("Not a valid function signature")
+		return false
+	var c: ProjectIndex.ScriptClass = index.classes.get(class_id)
+	if after:
+		c = index.classes.get(after.self_type, c)
+	if c == null:
+		return false
+	var sf: ScriptFile = index.files[c.res_path]
+	var class_path := _class_path(c)
+	var qual := ".".join(class_path + [sig.name])
+	if not sf.find_function(qual).is_empty():
+		status("%s already exists" % qual)
+		return false
+	var after_node := {}
+	if after:
+		after_node = sf.find_function(after.qualname).get("node", {})
+	else:
+		for f in sf.functions():
+			if f.class_path == class_path:
+				after_node = f.node
+	var class_node := sf.named_tree() if class_path.is_empty() else _find_class_node(sf, class_path)
+	var r := GraphEdits.create_function(sf.doc, sf, after_node, class_node, text)
+	if r.is_empty() or not sf.apply_edits(r.edits):
+		status("Could not add %s here" % sig.name)
+		return false
+	_last_file = sf
+	var top := c.id
+	while not index.classes[top].outer.is_empty():
+		top = index.classes[top].outer
+	if after:
+		_pending_place[sf.res_path + "|" + qual] = after
+	if macro.nodes.has(top) and not macro.nodes[top].expanded:
+		toggle_class(top)
+	status("Created %s" % qual)
+	return true
+
+
+func _class_path(c: ProjectIndex.ScriptClass) -> Array:
+	var out := []
+	while not c.outer.is_empty():
+		out.push_front(c.id.substr(c.outer.length() + 1))
+		c = index.classes[c.outer]
+	return out
+
+
+func _find_class_node(sf: ScriptFile, class_path: Array) -> Dictionary:
+	var node := sf.named_tree()
+	for part in class_path:
+		var found := {}
+		var container: Dictionary = node if node.type == "source" else Cst.field(node, "body")
+		for n in Cst.named(container):
+			if n.type == "class_definition" and sf.text(Cst.field(n, "name")) == part:
+				found = n
+		if found.is_empty():
+			return {}
+		node = found
+	return node
+
+
+## Deletes the board's function on the second click within a few seconds.
+func delete_function(b: FunctionBoard) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _delete_armed.get(b, -DELETE_CONFIRM_MS * 2) > DELETE_CONFIRM_MS:
+		_delete_armed[b] = now
+		status("Click delete again to remove %s (Ctrl+Z undoes it)" % b.qualname)
+		return
+	_delete_armed.erase(b)
+	var f := b.file.find_function(b.qualname)
+	if f.is_empty():
+		return
+	_last_file = b.file
+	if b.file.apply_edits(GraphEdits.delete_function(b.file.doc, f.node).edits):
+		status("Deleted %s" % b.qualname)
+
+
+## Type text that can be written in source, or "" (Variant / unnameable).
+func _writable_type(t: String) -> String:
+	if t.is_empty() or t.begins_with("res://") or t.begins_with("type:") or t == "void":
+		return ""
+	return index.type_label(t)
 
 
 func _show_panel(p: Panel3D, near: Node3D, at := Vector3.INF) -> void:
@@ -615,19 +870,60 @@ func _open_pin_search(src: GraphPin, drop: Vector3) -> void:
 			if d.name == "result":
 				expr = MemberSearch._var_name(s.call_name) + "_result"
 			var cands := search.for_output(d.type, expr)
+			if s.kind != "entry":
+				# Make this value the function's output.
+				var out := MemberSearch.Candidate.new()
+				out.label = "return %s  (as the function's output)" % expr
+				out.kind = "return_output"
+				out.group_label = "Function output"
+				out.code = "return " + expr
+				cands.push_front(out)
+				for i in cands.size():
+					cands[i].rank = i
 			_open_search("%s : %s  ›" % [expr, index.type_label(d.type)], cands, b, drop, func(c: MemberSearch.Candidate):
+				var sf := b.file
+				sf.begin_group()
 				if d.name == "result" and not _extract_result_var(b, key, expr):
+					sf.end_group()
 					return
-				_insert_statement(b, key, "next", c.code))
+				_insert_statement(b, key, "next", c.code)
+				if c.kind == "return_output":
+					var t := _writable_type(d.type)
+					var ret: FunctionGraph.Field = b.fresh_graph().get_stmt("entry").get_field("ret")
+					if not t.is_empty() and ret and (ret.is_absent() or ret.text == "void"):
+						_set_entry_field(b, "ret", t)
+				sf.end_group())
 		"data_in":
 			var f := s.get_field(src.pin_name)
 			var r := TypeResolver.for_function(index, b.self_type, b.file, b.graph.func_node, s.start if s.kind != "entry" else -1)
 			var cands := search.for_input(f.expect_type, r)
 			var fname := f.name
+			# Or turn it into a new input of the function.
+			var pname := f.label.trim_suffix("?").to_snake_case()
+			if not pname.is_valid_identifier() or r.scope.has(pname) or pname in ["on", "in", "if", "elif", "while", "value"]:
+				pname = "value"
+			while r.scope.has(pname):
+				pname += "_2"
+			var ptype := _writable_type(f.expect_type)
+			var param_text := pname + (": " + ptype if not ptype.is_empty() else "")
+			var new_in := MemberSearch.Candidate.new()
+			new_in.label = "+ new input  %s" % param_text
+			new_in.kind = "new_input"
+			new_in.group_label = "Function input"
+			new_in.expr = pname
+			cands.push_front(new_in)
+			for i in cands.size():
+				cands[i].rank = i
 			_open_search("› %s (%s)" % [f.label if not f.label.is_empty() else f.name, index.type_label(f.expect_type)], cands, b, drop, func(c: MemberSearch.Candidate):
+				var sf := b.file
+				sf.begin_group()
+				if c.kind == "new_input" and not run_op(b, func(g): return GraphEdits.add_param(b.file.doc, g, param_text)):
+					sf.end_group()
+					return
 				run_op(b, func(g):
 					var ss: FunctionGraph.Stmt = g.get_stmt(key)
-					return GraphEdits.set_field(b.file.doc, ss, ss.get_field(fname), c.expr) if ss else {}))
+					return GraphEdits.set_field(b.file.doc, ss, ss.get_field(fname), c.expr) if ss else {})
+				sf.end_group())
 		"exec_out":
 			var pin := src.pin_name
 			_open_search("Add statement after %s (%s)" % [s.title, pin], _statement_candidates(b), b, drop, func(c: MemberSearch.Candidate):
@@ -768,6 +1064,12 @@ func handle_key(ev: InputEventKey) -> bool:
 				relayout(selection.board)
 		KEY_K:
 			toggle_keyboard()
+		KEY_N:
+			if is_instance_valid(selection.board):
+				prompt_new_function(selection.board.self_type, selection.board)
+		KEY_I:
+			if is_instance_valid(selection.board):
+				add_input(selection.board)
 		KEY_ESCAPE:
 			select(null, "")
 		_:

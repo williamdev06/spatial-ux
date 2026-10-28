@@ -97,6 +97,7 @@ var stmts: Array = [] ## Pre-order, entry first.
 var by_key := {}
 var bodies := {}
 var edges: Array = [] ## {from, pin, to}
+var param_nodes: Array = [] ## CST nodes of the parameters, in order.
 
 
 static func build(script_file: ScriptFile, func_info: Dictionary) -> FunctionGraph:
@@ -143,17 +144,23 @@ func _build() -> void:
 	entry.exec_outs = ["next"]
 	_add(entry)
 
+	# Signature: the name, one field per parameter (the function's inputs) and
+	# the return type (its output).
+	var name_node := Cst.field(func_node, "name")
+	if not name_node.is_empty():
+		entry.fields.append(_node_field("name", "func", name_node))
 	var params := Cst.field(func_node, "parameters")
 	if not params.is_empty():
-		var pf := _field("params", "params", params.start + 1, params.end - 1)
-		entry.fields.append(pf)
+		param_nodes = Cst.named(params)
+		for i in param_nodes.size():
+			entry.fields.append(_node_field("param%d" % i, "in", param_nodes[i]))
 	var ret := Cst.field(func_node, "return_type")
 	if not ret.is_empty():
-		var rf := _field("ret", "->", ret.start, ret.end)
+		var rf := _field("ret", "returns", ret.start, ret.end)
 		rf.opt_start = params.end if not params.is_empty() else ret.start
 		entry.fields.append(rf)
 	elif not params.is_empty():
-		var rf := _field("ret", "->", params.end, params.end)
+		var rf := _field("ret", "returns", params.end, params.end)
 		rf.prefix = " -> "
 		entry.fields.append(rf)
 

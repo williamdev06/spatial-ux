@@ -51,7 +51,9 @@ func test_entry_pins() -> void:
 	var e := g.get_stmt("entry")
 	var outs := e.data_outs.map(func(d): return "%s:%s" % [d.label, d.type])
 	check_eq(outs, ["self:", "delta:float", "target:Node3D"])
-	check_eq(e.get_field("params").text, "delta: float, target: Node3D")
+	check_eq(e.get_field("name").text, "step")
+	check_eq(e.get_field("param0").text, "delta: float")
+	check_eq(e.get_field("param1").text, "target: Node3D")
 	check_eq(e.get_field("ret").text, "void")
 
 

@@ -8,7 +8,8 @@ signal open_requested(path: String)
 const HELP_DESKTOP := """Mouse: LMB click/drag · RMB hold to look · WASD/QE fly (Shift fast) · wheel dolly / push-pull while dragging · MMB pan
 Click a class sphere to expand its functions. Drag nodes and boards anywhere. Click a field to edit it; double-click a node for its full text.
 Drag from a pin to empty space for the context search; drop on another pin to connect (exec: reorder, data: use the value).
-Del delete · Alt+↑/↓ reorder · Space add after selected · Enter edit selected · Ctrl+Z/Y undo/redo · R auto-layout · K keyboard · Ctrl+O open · F1 help"""
+Del delete · Alt+↑/↓ reorder · Space add after selected · Enter edit selected · Ctrl+Z/Y undo/redo · R auto-layout · K keyboard · Ctrl+O open · F1 help
+Functions: "+ func" on a board or class sphere (N) · "+ input" on the func node (I) · click name / input / returns to edit, clear an input to remove it · double-click the func node to edit the whole signature · "delete" twice removes a function"""
 const HELP_XR := """Trigger: click/drag · Grip: grab node/board/panel, or the world · Left stick move · Right stick turn / up-down / push-pull
 B/Y keyboard · A undo · X redo · Menu: this panel"""
 
